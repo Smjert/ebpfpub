@@ -18,17 +18,17 @@
 
 namespace tob::ebpfpub {
 StringErrorOr<llvm::Value *>
-getPtRegsParameterFromName(llvm::IRBuilder<> &builder, llvm::Value *pt_regs,
+getPtRegsParameterFromName(llvm::Module &module, llvm::IRBuilder<> &builder, llvm::Value *pt_regs,
                            const std::string &name, llvm::Type *type = nullptr);
 
 StringErrorOr<llvm::Value *>
-getRegisterForParameterIndex(llvm::IRBuilder<> &builder, llvm::Value *pt_regs,
+getRegisterForParameterIndex(llvm::Module &module, llvm::IRBuilder<> &builder, llvm::Value *pt_regs,
                              std::uint32_t index, llvm::Type *type = nullptr);
 
 StringErrorOr<std::uint32_t>
 translateParameterNumberToPtregsIndex(std::uint32_t index);
 
 StringErrorOr<llvm::Value *>
-getReturnValuePtregsEntry(llvm::IRBuilder<> &builder, llvm::Value *pt_regs,
+getReturnValuePtregsEntry(llvm::Module &module, llvm::IRBuilder<> &builder, llvm::Value *pt_regs,
                           llvm::Type *type = nullptr);
 } // namespace tob::ebpfpub

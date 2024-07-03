@@ -228,10 +228,11 @@ SuccessOrStringError ForkNamespaceHelper::generateFunction(llvm::Module &module,
   // Read the child process id from this tracepoint event
   auto function_args = function_ptr->arg_begin();
 
-  auto child_pid_ptr = builder.CreateGEP(
-      function_args, {builder.getInt32(0), builder.getInt32(3)});
+  auto child_pid_ptr =
+      builder.CreateGEP(function_param_type, function_args,
+                        {builder.getInt32(0), builder.getInt32(3)});
 
-  auto child_pid = builder.CreateLoad(child_pid_ptr);
+  auto child_pid = builder.CreateLoad(builder.getInt32Ty(), child_pid_ptr);
   auto child_pid_64 = builder.CreateZExt(child_pid, builder.getInt64Ty());
 
   // Go through each event map we received to update the event headers
@@ -246,7 +247,7 @@ SuccessOrStringError ForkNamespaceHelper::generateFunction(llvm::Module &module,
 
   auto event_header_ptr_cond = builder.CreateICmpEQ(
       event_header_ptr,
-      llvm::Constant::getNullValue(event_header_ptr->getType()));
+      llvm::Constant::getNullValue(event_header_type->getPointerTo()));
 
   auto valid_event_header_ptr_bb = llvm::BasicBlock::Create(
       llvm_context, "valid_event_header_ptr_fd_" + std::to_string(event_map_fd),
@@ -266,8 +267,9 @@ SuccessOrStringError ForkNamespaceHelper::generateFunction(llvm::Module &module,
   builder.SetInsertPoint(valid_event_header_ptr_bb);
 
   // Update the exit code in the event header
-  auto exit_code_ptr = builder.CreateGEP(
-      event_header_ptr, {builder.getInt32(0), builder.getInt32(6)});
+  auto exit_code_ptr =
+      builder.CreateGEP(event_header_type, event_header_ptr,
+                        {builder.getInt32(0), builder.getInt32(6)});
 
   builder.CreateStore(child_pid_64, exit_code_ptr);
 
