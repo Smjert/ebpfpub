@@ -542,7 +542,7 @@ FunctionTracer::generateBufferStorageIndex(llvm::IRBuilder<> &builder,
       buffer_storage_index_generator_exp.takeValue();
 
   auto previous_buffer_storage_index =
-      builder.CreateLoad(buffer_storage_index_generator);
+      builder.CreateLoad(builder.getInt32Ty(), buffer_storage_index_generator);
 
   auto buffer_storage_index =
       builder.CreateBinOp(llvm::Instruction::Add, previous_buffer_storage_index,
@@ -1161,7 +1161,7 @@ StringErrorOr<llvm::Value *> FunctionTracer::getMapEntry(
 
   // Terminate the function if the entry was not found
   auto map_entry_cond = builder.CreateICmpEQ(
-      llvm::Constant::getNullValue(map_entry->getType()), map_entry);
+      llvm::Constant::getNullValue(map_entry_type->getPointerTo()), map_entry);
 
   auto invalid_map_entry_bb = llvm::BasicBlock::Create(
       context, "invalid_" + label + "map_entry", current_function);
@@ -1377,10 +1377,6 @@ SuccessOrStringError FunctionTracer::generateEventHeader(
   auto current_bb = builder.GetInsertBlock();
   auto &module = *current_bb->getModule();
 
-  // Get the event header from the event object
-  auto event_header = builder.CreateGEP(
-      event_object, {builder.getInt32(0), builder.getInt32(0)});
-
   // Event object size, including the size field itself
   auto event_type = getTypeByName(module, kEventTypeName);
   if (event_type == nullptr) {
@@ -1388,38 +1384,54 @@ SuccessOrStringError FunctionTracer::generateEventHeader(
                                " is not defined");
   }
 
+  // Get the event header from the event object
+  auto event_header =
+      builder.CreateGEP(event_type->getPointerTo(), event_object,
+                        {builder.getInt32(0), builder.getInt32(0)});
+
+  auto event_header_type = getTypeByName(module, kEventHeaderTypeName);
+  if (event_header_type == nullptr) {
+    return StringError::create("The type " + kEventHeaderTypeName +
+                               " is not defined");
+  }
+
   auto event_object_size =
       static_cast<std::uint32_t>(ebpf::getTypeSize(module, event_type));
 
-  auto event_header_field = builder.CreateGEP(
-      event_header, {builder.getInt32(0U), builder.getInt32(0U)});
+  auto event_header_field =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0U), builder.getInt32(0U)});
 
   builder.CreateStore(builder.getInt32(event_object_size), event_header_field);
 
   // Event identifier
-  event_header_field = builder.CreateGEP(
-      event_header, {builder.getInt32(0U), builder.getInt32(1U)});
+  event_header_field =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0U), builder.getInt32(1U)});
 
   auto event_identifier = static_cast<std::uint64_t>(enter_event.fd());
   builder.CreateStore(builder.getInt64(event_identifier), event_header_field);
 
   // Timestamp
-  event_header_field = builder.CreateGEP(
-      event_header, {builder.getInt32(0U), builder.getInt32(2U)});
+  event_header_field =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0U), builder.getInt32(2U)});
 
   auto timestamp = bpf_syscall_interface.ktimeGetNs();
   builder.CreateStore(timestamp, event_header_field);
 
   // pid, tgid
-  event_header_field = builder.CreateGEP(
-      event_header, {builder.getInt32(0U), builder.getInt32(3U)});
+  event_header_field =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0U), builder.getInt32(3U)});
 
   auto pid_tgid = bpf_syscall_interface.getCurrentPidTgid();
   builder.CreateStore(pid_tgid, event_header_field);
 
   // uid, gid
-  event_header_field = builder.CreateGEP(
-      event_header, {builder.getInt32(0U), builder.getInt32(4U)});
+  event_header_field =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0U), builder.getInt32(4U)});
 
   auto uid_gid = bpf_syscall_interface.getCurrentUidGid();
   builder.CreateStore(uid_gid, event_header_field);
@@ -1441,8 +1453,9 @@ SuccessOrStringError FunctionTracer::generateEventHeader(
     has_cgroups_vmcall = true;
   }
 
-  event_header_field = builder.CreateGEP(
-      event_header, {builder.getInt32(0U), builder.getInt32(5U)});
+  event_header_field =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0U), builder.getInt32(5U)});
 
   if (has_cgroups_vmcall) {
     auto cgroup_id = bpf_syscall_interface.getCurrentCgroupId();
@@ -1453,30 +1466,35 @@ SuccessOrStringError FunctionTracer::generateEventHeader(
   }
 
   // Exit code (initialize to zero)
-  event_header_field = builder.CreateGEP(
-      event_header, {builder.getInt32(0U), builder.getInt32(6U)});
+  event_header_field =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0U), builder.getInt32(6U)});
 
   builder.CreateStore(builder.getInt64(0U), event_header_field);
 
   // Probe error flag (initialize to zero)
-  event_header_field = builder.CreateGEP(
-      event_header, {builder.getInt32(0U), builder.getInt32(7U)});
+  event_header_field =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0U), builder.getInt32(7U)});
 
   builder.CreateStore(builder.getInt64(0U), event_header_field);
 
   // Call duration (initialize to zero)
-  event_header_field = builder.CreateGEP(
-      event_header, {builder.getInt32(0U), builder.getInt32(8U)});
+  event_header_field =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0U), builder.getInt32(8U)});
 
   builder.CreateStore(builder.getInt64(0U), event_header_field);
 
   // Capture the cgroup name
   if (llvm_bridge != nullptr) {
-    auto parent_cgroup_name = builder.CreateGEP(
-        event_header, {builder.getInt32(0U), builder.getInt32(9U)});
+    auto parent_cgroup_name =
+        builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                          {builder.getInt32(0U), builder.getInt32(9U)});
 
-    auto current_cgroup_name = builder.CreateGEP(
-        event_header, {builder.getInt32(0U), builder.getInt32(10U)});
+    auto current_cgroup_name =
+        builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                          {builder.getInt32(0U), builder.getInt32(10U)});
 
     auto current_task = bpf_syscall_interface.getCurrentTask();
 
@@ -1516,8 +1534,9 @@ SuccessOrStringError FunctionTracer::generateEventHeader(
     bpf_syscall_interface.probeRead(temp_storage, builder.getInt64(8U),
                                     cgroup_name_ptr.opaque_pointer);
 
-    bpf_syscall_interface.probeReadStr(parent_cgroup_name, kCgroupNameSliceSize,
-                                       builder.CreateLoad(temp_storage));
+    bpf_syscall_interface.probeReadStr(
+        parent_cgroup_name, kCgroupNameSliceSize,
+        builder.CreateLoad(builder.getInt8Ty()->getPointerTo(), temp_storage));
 
     cgroup_name_ptr_res = llvm_bridge->getElementPtr(
         builder, current_task, task_struct_type,
@@ -1535,9 +1554,9 @@ SuccessOrStringError FunctionTracer::generateEventHeader(
     bpf_syscall_interface.probeRead(temp_storage, builder.getInt64(8U),
                                     cgroup_name_ptr.opaque_pointer);
 
-    bpf_syscall_interface.probeReadStr(current_cgroup_name,
-                                       kCgroupNameSliceSize,
-                                       builder.CreateLoad(temp_storage));
+    bpf_syscall_interface.probeReadStr(
+        current_cgroup_name, kCgroupNameSliceSize,
+        builder.CreateLoad(builder.getInt8Ty()->getPointerTo(), temp_storage));
   }
 
   return {};
@@ -1555,12 +1574,26 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
     return {};
   }
 
+  auto *current_bb = builder.GetInsertBlock();
+  auto *module = current_bb->getModule();
+
+  auto event_type = getTypeByName(*module, kEventTypeName);
+  if (event_type == nullptr) {
+    return StringError::create("The type " + kEventTypeName +
+                               " is not defined");
+  }
+
+  auto *pt_regs_type = getTypeByName(*module, "pt_regs");
+  if (pt_regs_type == nullptr) {
+    return StringError::create("The type pt_regs is not defined");
+  }
+
   // Get the event data from the event object
-  auto event_data = builder.CreateGEP(
-      event_object, {builder.getInt32(0), builder.getInt32(1)});
+  auto event_data =
+      builder.CreateGEP(event_type->getPointerTo(), event_object,
+                        {builder.getInt32(0), builder.getInt32(1)});
 
   // Get the args parameter from the function
-  auto current_bb = builder.GetInsertBlock();
   auto current_function = current_bb->getParent();
 
   llvm::Value *args_data = current_function->arg_begin();
@@ -1572,13 +1605,18 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
       return first_arg_index_exp.error();
     }
 
+    auto *enter_function_args_type =
+        getTypeByName(*module, kEnterFunctionParameterTypeName);
+
     auto first_arg_index =
         static_cast<std::uint32_t>(first_arg_index_exp.takeValue());
 
     auto real_pt_regs_ptr_ref = builder.CreateGEP(
-        args_data, {builder.getInt32(0), builder.getInt32(first_arg_index)});
+        enter_function_args_type->getPointerTo(), args_data,
+        {builder.getInt32(0), builder.getInt32(first_arg_index)});
 
-    auto real_pt_regs_ptr = builder.CreateLoad(real_pt_regs_ptr_ref);
+    auto real_pt_regs_ptr =
+        builder.CreateLoad(pt_regs_type->getPointerTo(), real_pt_regs_ptr_ref);
 
     // Get the space we have allocated for the new ptr_regs
     auto new_pt_regs_exp = getStackAllocation(allocation_list, "pt_regs");
@@ -1589,10 +1627,7 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
     args_data = new_pt_regs_exp.takeValue();
 
     // Determine how many fields we have to copy
-    auto module = current_bb->getModule();
     llvm::DataLayout data_layout(module);
-
-    auto pt_regs_type = args_data->getType()->getPointerElementType();
 
     auto pt_regs_size =
         static_cast<std::uint32_t>(data_layout.getTypeAllocSize(pt_regs_type));
@@ -1602,7 +1637,8 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
     for (std::uint32_t field_index = 0U; field_index < field_count;
          ++field_index) {
       auto destination_ptr = builder.CreateGEP(
-          args_data, {builder.getInt32(0), builder.getInt32(field_index)});
+          pt_regs_type->getPointerTo(), args_data,
+          {builder.getInt32(0), builder.getInt32(field_index)});
 
       auto source_ptr =
           builder.CreateBinOp(llvm::Instruction::Add, real_pt_regs_ptr,
@@ -1611,6 +1647,18 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
       bpf_syscall_interface.probeRead(destination_ptr, builder.getInt32(8),
                                       source_ptr);
     }
+  }
+
+  auto *event_data_type = getTypeByName(*module, kEventDataTypeName);
+  if (event_data_type == nullptr) {
+    return StringError::create("The type " + kEventDataTypeName +
+                               " is not defined");
+  }
+
+  auto *event_header_type = getTypeByName(*module, kEventHeaderTypeName);
+  if (event_header_type == nullptr) {
+    return StringError::create("The type " + kEventHeaderTypeName +
+                               " is not defined");
   }
 
   // Go through each parameter and copy it (by value) to the event data
@@ -1639,19 +1687,21 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
       args_index = args_index_exp.takeValue();
     }
 
-    auto args_field = builder.CreateGEP(
-        args_data, {builder.getInt32(0), builder.getInt32(args_index)});
+    auto args_field =
+        builder.CreateGEP(pt_regs_type->getPointerTo(), args_data,
+                          {builder.getInt32(0), builder.getInt32(args_index)});
 
-    auto args_field_value = builder.CreateLoad(args_field);
+    auto args_field_value =
+        builder.CreateLoad(builder.getInt32Ty(), args_field);
 
     // Store the value
     if (param_index_entry.destination_index_in_opt.has_value()) {
       auto event_data_index = static_cast<std::uint32_t>(
           param_index_entry.destination_index_in_opt.value());
 
-      auto event_data_field =
-          builder.CreateGEP(event_data, {builder.getInt32(0),
-                                         builder.getInt32(event_data_index)});
+      auto event_data_field = builder.CreateGEP(
+          event_data_type->getPointerTo(), event_data,
+          {builder.getInt32(0), builder.getInt32(event_data_index)});
 
       builder.CreateStore(args_field_value, event_data_field);
     }
@@ -1660,9 +1710,9 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
       auto event_data_index = static_cast<std::uint32_t>(
           param_index_entry.destination_index_out_opt.value());
 
-      auto event_data_field =
-          builder.CreateGEP(event_data, {builder.getInt32(0),
-                                         builder.getInt32(event_data_index)});
+      auto event_data_field = builder.CreateGEP(
+          event_data_type->getPointerTo(), event_data,
+          {builder.getInt32(0), builder.getInt32(event_data_index)});
 
       builder.CreateStore(args_field_value, event_data_field);
     }
@@ -1671,11 +1721,13 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
   // Capture the IN parameters
   std::unordered_map<std::string, llvm::Value *> integer_parameter_map;
 
-  auto event_header = builder.CreateGEP(
-      event_object, {builder.getInt32(0), builder.getInt32(0)});
+  auto event_header =
+      builder.CreateGEP(event_type->getPointerTo(), event_object,
+                        {builder.getInt32(0), builder.getInt32(0)});
 
-  auto probe_error_flag = builder.CreateGEP(
-      event_header, {builder.getInt32(0), builder.getInt32(7)});
+  auto probe_error_flag =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0), builder.getInt32(7)});
 
   for (const auto &param_index_entry : param_list_index) {
     if (!param_index_entry.destination_index_in_opt.has_value()) {
@@ -1688,7 +1740,8 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
         param_index_entry.destination_index_in_opt.value());
 
     auto event_data_field = builder.CreateGEP(
-        event_data, {builder.getInt32(0), builder.getInt32(event_data_index)});
+        event_data_type->getPointerTo(), event_data,
+        {builder.getInt32(0), builder.getInt32(event_data_index)});
 
     if (param.type == Parameter::Type::Integer) {
       integer_parameter_map.insert({"in:" + param.name, event_data_field});
@@ -1725,7 +1778,8 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
 
         // Integers from the event data structure are always 64-bit. When
         // capturing buffers we always use 32-bit size values
-        buffer_size = builder.CreateLoad(size_integer_ptr);
+        buffer_size =
+            builder.CreateLoad(builder.getInt64Ty(), size_integer_ptr);
 
         buffer_size =
             builder.CreateIntCast(buffer_size, builder.getInt32Ty(), false);
@@ -1879,33 +1933,51 @@ SuccessOrStringError FunctionTracer::createExitFunction(
   auto event_entry = event_entry_exp.takeValue();
 
   // Get the event header from the event object
-  auto event_header = builder.CreateGEP(
-      event_entry, {builder.getInt32(0), builder.getInt32(0)});
+  auto event_header =
+      builder.CreateGEP(event_type->getPointerTo(), event_entry,
+                        {builder.getInt32(0), builder.getInt32(0)});
+
+  auto *event_header_type = getTypeByName(module, kEventHeaderTypeName);
+  if (event_header_type == nullptr) {
+    return StringError::create("The type " + kEventHeaderTypeName +
+                               " is not defined");
+  }
 
   // Update the exit code in the event header
   if (!skip_exit_code) {
-    auto event_header_exit_code = builder.CreateGEP(
-        event_header, {builder.getInt32(0), builder.getInt32(6)});
+    auto event_header_exit_code =
+        builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                          {builder.getInt32(0), builder.getInt32(6)});
 
     llvm::Value *function_exit_code_value{nullptr};
 
     if (exit_event.type() == ebpf::IEvent::Type::Tracepoint) {
+      auto *exit_function_args_type =
+          getTypeByName(module, kExitFunctionParameterTypeName);
+      if (exit_function_args_type == nullptr) {
+        return StringError::create(
+            "The type " + kExitFunctionParameterTypeName + " is not defined");
+      }
+
       // Skip the tracepoint header and get the 'ret' parameter
       auto function_exit_code = builder.CreateGEP(
-          exit_function_args, {builder.getInt32(0), builder.getInt32(5)});
+          exit_function_args_type->getPointerTo(), exit_function_args,
+          {builder.getInt32(0), builder.getInt32(5)});
 
-      function_exit_code_value = builder.CreateLoad(function_exit_code);
+      function_exit_code_value =
+          builder.CreateLoad(builder.getInt32Ty(), function_exit_code);
 
     } else {
       auto function_exit_code_value_exp =
-          getReturnValuePtregsEntry(builder, exit_function_args);
+          getReturnValuePtregsEntry(module, builder, exit_function_args);
 
       if (!function_exit_code_value_exp.succeeded()) {
         return function_exit_code_value_exp.error();
       }
 
       auto function_exit_code_index = function_exit_code_value_exp.takeValue();
-      function_exit_code_value = builder.CreateLoad(function_exit_code_index);
+      function_exit_code_value =
+          builder.CreateLoad(builder.getInt32Ty(), function_exit_code_index);
     }
 
     builder.CreateStore(function_exit_code_value, event_header_exit_code);
@@ -1933,28 +2005,38 @@ SuccessOrStringError FunctionTracer::createExitFunction(
       auto exit_dest_index = static_cast<std::uint32_t>(
           exit_code_entry.destination_index_out_opt.value());
 
-      auto event_data = builder.CreateGEP(
-          event_entry, {builder.getInt32(0), builder.getInt32(1)});
+      auto event_data =
+          builder.CreateGEP(event_type->getPointerTo(), event_entry,
+                            {builder.getInt32(0), builder.getInt32(1)});
+
+      auto *event_data_type = getTypeByName(module, kEventDataTypeName);
+      if (event_data_type == nullptr) {
+        return StringError::create("The type " + kEventDataTypeName +
+                                   " is not defined");
+      }
 
       auto exit_event_data_field = builder.CreateGEP(
-          event_data, {builder.getInt32(0), builder.getInt32(exit_dest_index)});
+          event_data_type->getPointerTo(), event_data,
+          {builder.getInt32(0), builder.getInt32(exit_dest_index)});
 
       builder.CreateStore(function_exit_code_value, exit_event_data_field);
     }
   }
 
   // Set the call duration in the event header
-  auto enter_time_ptr = builder.CreateGEP(
-      event_header, {builder.getInt32(0), builder.getInt32(2)});
+  auto enter_time_ptr =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0), builder.getInt32(2)});
 
-  auto enter_time = builder.CreateLoad(enter_time_ptr);
+  auto enter_time = builder.CreateLoad(builder.getInt64Ty(), enter_time_ptr);
   auto exit_time = bpf_syscall_interface->ktimeGetNs();
 
   auto call_duration =
       builder.CreateBinOp(llvm::Instruction::Sub, exit_time, enter_time);
 
-  auto call_duration_ptr = builder.CreateGEP(
-      event_header, {builder.getInt32(0), builder.getInt32(8)});
+  auto call_duration_ptr =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0), builder.getInt32(8)});
 
   builder.CreateStore(call_duration, call_duration_ptr);
 
@@ -2016,16 +2098,38 @@ SuccessOrStringError FunctionTracer::generateExitEventData(
     return {};
   }
 
+  auto &module = *builder.GetInsertBlock()->getModule();
+  auto *event_type = getTypeByName(module, kEventTypeName);
+  if (event_type == nullptr) {
+    return StringError::create("The type " + kEventTypeName +
+                               " is not defined");
+  }
+
   // Get the event data from the event object
-  auto event_data = builder.CreateGEP(
-      event_object, {builder.getInt32(0), builder.getInt32(1)});
+  auto event_data =
+      builder.CreateGEP(event_type->getPointerTo(), event_object,
+                        {builder.getInt32(0), builder.getInt32(1)});
 
   // Get the event header from the event object
-  auto event_header = builder.CreateGEP(
-      event_object, {builder.getInt32(0), builder.getInt32(0)});
+  auto event_header =
+      builder.CreateGEP(event_type->getPointerTo(), event_object,
+                        {builder.getInt32(0), builder.getInt32(0)});
 
-  auto probe_error_flag = builder.CreateGEP(
-      event_header, {builder.getInt32(0), builder.getInt32(7)});
+  auto *event_header_type = getTypeByName(module, kEventHeaderTypeName);
+  if (event_header_type == nullptr) {
+    return StringError::create("The type " + kEventHeaderTypeName +
+                               " is not defined");
+  }
+
+  auto *event_data_type = getTypeByName(module, kEventDataTypeName);
+  if (event_data_type == nullptr) {
+    return StringError::create("The type " + kEventDataTypeName +
+                               " is not defined");
+  }
+
+  auto probe_error_flag =
+      builder.CreateGEP(event_header_type->getPointerTo(), event_header,
+                        {builder.getInt32(0), builder.getInt32(7)});
 
   // Map all the integer fields
   std::unordered_map<std::string, llvm::Value *> integer_parameter_map;
@@ -2040,9 +2144,9 @@ SuccessOrStringError FunctionTracer::generateExitEventData(
         auto event_data_index = static_cast<std::uint32_t>(
             param_index_entry.destination_index_in_opt.value());
 
-        auto event_data_field =
-            builder.CreateGEP(event_data, {builder.getInt32(0),
-                                           builder.getInt32(event_data_index)});
+        auto event_data_field = builder.CreateGEP(
+            event_data_type->getPointerTo(), event_data,
+            {builder.getInt32(0), builder.getInt32(event_data_index)});
 
         integer_parameter_map.insert({"in:" + param.name, event_data_field});
       }
@@ -2052,9 +2156,9 @@ SuccessOrStringError FunctionTracer::generateExitEventData(
         auto event_data_index = static_cast<std::uint32_t>(
             param_index_entry.destination_index_out_opt.value());
 
-        auto event_data_field =
-            builder.CreateGEP(event_data, {builder.getInt32(0),
-                                           builder.getInt32(event_data_index)});
+        auto event_data_field = builder.CreateGEP(
+            event_data_type->getPointerTo(), event_data,
+            {builder.getInt32(0), builder.getInt32(event_data_index)});
 
         integer_parameter_map.insert({"out:" + param.name, event_data_field});
       }
@@ -2073,7 +2177,8 @@ SuccessOrStringError FunctionTracer::generateExitEventData(
         param_index_entry.destination_index_out_opt.value());
 
     auto event_data_field = builder.CreateGEP(
-        event_data, {builder.getInt32(0), builder.getInt32(event_data_index)});
+        event_data_type->getPointerTo(), event_data,
+        {builder.getInt32(0), builder.getInt32(event_data_index)});
 
     if (param.type == Parameter::Type::IntegerPtr) {
       captureIntegerByPointer(builder, bpf_syscall_interface, param,
@@ -2105,7 +2210,8 @@ SuccessOrStringError FunctionTracer::generateExitEventData(
 
         // Integers from the event data structure are always 64-bit. When
         // capturing buffers we always use 32-bit size values
-        buffer_size = builder.CreateLoad(size_integer_ptr);
+        buffer_size =
+            builder.CreateLoad(builder.getInt64Ty(), size_integer_ptr);
 
         buffer_size =
             builder.CreateIntCast(buffer_size, builder.getInt32Ty(), false);
@@ -2154,7 +2260,8 @@ void FunctionTracer::captureIntegerByPointer(
   auto current_function = current_bb->getParent();
 
   // Read the integer address first
-  auto buffer_address = builder.CreateLoad(event_data_field);
+  auto buffer_address =
+      builder.CreateLoad(builder.getInt64Ty(), event_data_field);
 
   // Skip the read if the pointer is set to nullptr
   auto buffer_address_cond =
@@ -2186,7 +2293,8 @@ void FunctionTracer::captureIntegerByPointer(
                                    builder.getInt64(0x8000000000000000ULL));
 
   read_error = builder.CreateBinOp(
-      llvm::Instruction::Or, builder.CreateLoad(probe_error_flag), read_error);
+      llvm::Instruction::Or,
+      builder.CreateLoad(builder.getInt64Ty(), probe_error_flag), read_error);
 
   builder.CreateStore(read_error, probe_error_flag);
 
@@ -2488,7 +2596,8 @@ SuccessOrStringError FunctionTracer::captureString(
     const VariableList &variable_list, llvm::Value *event_data_field,
     const std::string &parameter_name, llvm::Value *probe_error_flag) {
 
-  auto string_address = builder.CreateLoad(event_data_field);
+  auto string_address =
+      builder.CreateLoad(builder.getInt8PtrTy(), event_data_field);
 
   // Skip the read if the pointer is set to nullptr
   auto current_bb = builder.GetInsertBlock();
@@ -2540,7 +2649,8 @@ SuccessOrStringError FunctionTracer::captureString(
                                    builder.getInt64(0x8000000000000000ULL));
 
   read_error = builder.CreateBinOp(
-      llvm::Instruction::Or, builder.CreateLoad(probe_error_flag), read_error);
+      llvm::Instruction::Or,
+      builder.CreateLoad(builder.getInt64Ty(), probe_error_flag), read_error);
 
   builder.CreateStore(read_error, probe_error_flag);
 
@@ -2564,7 +2674,8 @@ SuccessOrStringError FunctionTracer::captureBuffer(
     const std::string &parameter_name, llvm::Value *probe_error_flag,
     llvm::Value *buffer_size) {
 
-  auto buffer_address = builder.CreateLoad(event_data_field);
+  auto buffer_address =
+      builder.CreateLoad(builder.getInt8PtrTy(), event_data_field);
 
   // Skip the read if the pointer is set to nullptr
   auto current_bb = builder.GetInsertBlock();
@@ -2650,7 +2761,8 @@ SuccessOrStringError FunctionTracer::captureBuffer(
                                    builder.getInt64(0x8000000000000000ULL));
 
   read_error = builder.CreateBinOp(
-      llvm::Instruction::Or, builder.CreateLoad(probe_error_flag), read_error);
+      llvm::Instruction::Or,
+      builder.CreateLoad(builder.getInt64Ty(), probe_error_flag), read_error);
 
   builder.CreateStore(read_error, probe_error_flag);
 
@@ -2675,7 +2787,8 @@ SuccessOrStringError FunctionTracer::captureArgv(
     std::size_t argv_size) {
 
   // Skip the read if the pointer is set to nullptr
-  auto argv_address = builder.CreateLoad(event_data_field);
+  auto argv_address =
+      builder.CreateLoad(builder.getInt8PtrTy(), event_data_field);
 
   auto current_bb = builder.GetInsertBlock();
   auto &context = current_bb->getContext();
@@ -2739,8 +2852,9 @@ SuccessOrStringError FunctionTracer::captureArgv(
         llvm::Instruction::Add, argv_address, builder.getInt64(entry_offset));
 
     // Get the pointer to the current pointer buffer entry
-    auto pointer_buffer_entry_ptr = builder.CreateGEP(
-        pointer_buffer, {builder.getInt32(0), builder.getInt32(argv_index)});
+    auto pointer_buffer_entry_ptr =
+        builder.CreateGEP(array_type->getPointerTo(), pointer_buffer,
+                          {builder.getInt32(0), builder.getInt32(argv_index)});
 
     builder.CreateStore(argv_entry_ptr, pointer_buffer_entry_ptr);
 
@@ -2752,9 +2866,9 @@ SuccessOrStringError FunctionTracer::captureArgv(
     read_error = builder.CreateBinOp(llvm::Instruction::And, read_error,
                                      builder.getInt64(0x8000000000000000ULL));
 
-    read_error =
-        builder.CreateBinOp(llvm::Instruction::Or,
-                            builder.CreateLoad(probe_error_flag), read_error);
+    read_error = builder.CreateBinOp(
+        llvm::Instruction::Or,
+        builder.CreateLoad(builder.getInt64Ty(), probe_error_flag), read_error);
 
     builder.CreateStore(read_error, probe_error_flag);
 
@@ -2776,7 +2890,8 @@ SuccessOrStringError FunctionTracer::captureArgv(
     builder.SetInsertPoint(evaluate_string_ptr_bb);
 
     // If this is the null pointer, skip to the end
-    auto pointer_buffer_entry = builder.CreateLoad(pointer_buffer_entry_ptr);
+    auto pointer_buffer_entry =
+        builder.CreateLoad(builder.getInt8PtrTy(), pointer_buffer_entry_ptr);
 
     auto capture_string_bb =
         llvm::BasicBlock::Create(context, "capture_" + label, current_function);

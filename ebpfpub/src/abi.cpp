@@ -10,6 +10,8 @@
 
 #include <unordered_map>
 
+#include "llvm_compat.h"
+
 namespace tob::ebpfpub {
 namespace {
 
@@ -112,8 +114,17 @@ const std::string kRetSyscallRegister{"rax"};
 } // namespace
 
 StringErrorOr<llvm::Value *>
-getPtRegsParameterFromName(llvm::IRBuilder<> &builder, llvm::Value *pt_regs,
-                           const std::string &name, llvm::Type *type) {
+getPtRegsParameterFromName(llvm::Module &module, llvm::IRBuilder<> &builder,
+                           llvm::Value *pt_regs, const std::string &name,
+                           llvm::Type *type) {
+
+  std::vector<llvm::Type *> pt_regs_elements;
+  for (auto i = 0; i < kParameterNameToPtRegsIndex64.size(); ++i) {
+    pt_regs_elements.push_back(builder.getInt32Ty());
+  }
+
+  // auto pt_regs_type = llvm::StructType::create(builder.getContext(),
+  // pt_regs_elements, "pt_regs");
 
   auto parameter_it = kParameterNameToPtRegsIndex64.find(name);
   if (parameter_it == kParameterNameToPtRegsIndex64.end()) {
@@ -123,10 +134,13 @@ getPtRegsParameterFromName(llvm::IRBuilder<> &builder, llvm::Value *pt_regs,
 
   auto field_index = parameter_it->second;
 
-  auto value = builder.CreateGEP(
-      pt_regs, {builder.getInt32(0), builder.getInt32(field_index)});
+  auto pt_regs2_type = getTypeByName(module, "pt_regs");
 
-  if (type != nullptr && value->getType() != type) {
+  auto value =
+      builder.CreateGEP(pt_regs2_type->getPointerTo(), pt_regs,
+                        {builder.getInt32(0), builder.getInt32(field_index)});
+
+  if (type != nullptr && pt_regs2_type != type) {
     value = builder.CreateCast(llvm::Instruction::BitCast, value, type);
   }
 
@@ -134,15 +148,17 @@ getPtRegsParameterFromName(llvm::IRBuilder<> &builder, llvm::Value *pt_regs,
 }
 
 StringErrorOr<llvm::Value *>
-getRegisterForParameterIndex(llvm::IRBuilder<> &builder, llvm::Value *pt_regs,
-                             std::uint32_t index, llvm::Type *type) {
+getRegisterForParameterIndex(llvm::Module &module, llvm::IRBuilder<> &builder,
+                             llvm::Value *pt_regs, std::uint32_t index,
+                             llvm::Type *type) {
 
   if (index > 6) {
     return StringError::create("Invalid parameter index specified");
   }
 
   const auto &register_name = kSyscallParameterIndexToRegisterName64.at(index);
-  return getPtRegsParameterFromName(builder, pt_regs, register_name, type);
+  return getPtRegsParameterFromName(module, builder, pt_regs, register_name,
+                                    type);
 }
 
 StringErrorOr<std::uint32_t>
@@ -164,9 +180,9 @@ translateParameterNumberToPtregsIndex(std::uint32_t index) {
 }
 
 StringErrorOr<llvm::Value *>
-getReturnValuePtregsEntry(llvm::IRBuilder<> &builder, llvm::Value *pt_regs,
-                          llvm::Type *type) {
-  return getPtRegsParameterFromName(builder, pt_regs, kRetSyscallRegister,
-                                    type);
+getReturnValuePtregsEntry(llvm::Module &module, llvm::IRBuilder<> &builder,
+                          llvm::Value *pt_regs, llvm::Type *type) {
+  return getPtRegsParameterFromName(module, builder, pt_regs,
+                                    kRetSyscallRegister, type);
 }
 } // namespace tob::ebpfpub
