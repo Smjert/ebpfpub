@@ -232,8 +232,7 @@ SuccessOrStringError ForkNamespaceHelper::generateFunction(llvm::Module &module,
       builder.CreateGEP(function_param_type, function_args,
                         {builder.getInt32(0), builder.getInt32(3)});
 
-  auto child_pid = builder.CreateLoad(
-      llvm::Type::getInt32Ty(builder.getContext()), child_pid_ptr);
+  auto child_pid = builder.CreateLoad(builder.getInt32Ty(), child_pid_ptr);
   auto child_pid_64 = builder.CreateZExt(child_pid, builder.getInt64Ty());
 
   // Go through each event map we received to update the event headers

@@ -1161,7 +1161,7 @@ StringErrorOr<llvm::Value *> FunctionTracer::getMapEntry(
 
   // Terminate the function if the entry was not found
   auto map_entry_cond = builder.CreateICmpEQ(
-      llvm::Constant::getNullValue(map_entry_type->getPointerTo()), map_entry);
+      llvm::Constant::getNullValue(map_entry_type), map_entry);
 
   auto invalid_map_entry_bb = llvm::BasicBlock::Create(
       context, "invalid_" + label + "map_entry", current_function);
