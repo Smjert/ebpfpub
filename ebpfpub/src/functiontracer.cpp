@@ -257,6 +257,9 @@ FunctionTracer::FunctionTracer(
       error_message += ": " + error_buffer;
     }
 
+    output_stream.flush();
+    error_message += "\nFull Module:\n" + output_stream.str();
+
     throw StringError::create(error_message);
   }
 
@@ -1032,13 +1035,11 @@ SuccessOrStringError FunctionTracer::createEnterFunctionArgumentType(
         break;
       }
 
-      case Parameter::Type::IntegerPtr: {
-        field_type = llvmTypeForMemoryPointer(module)->getPointerTo();
-      }
+      case Parameter::Type::IntegerPtr:
       case Parameter::Type::Buffer:
       case Parameter::Type::String:
       case Parameter::Type::Argv:
-        field_type = llvm::Type::getInt8PtrTy(context);
+        field_type = llvmTypeForMemoryPointer(module);
         break;
       }
 
@@ -1055,7 +1056,6 @@ SuccessOrStringError FunctionTracer::createEnterFunctionArgumentType(
     } else {
       function_param_type_exp = type_ptr;
     }
-
   } else {
     // u(ret)probes and k(ret)probes only use the pt_regs structure
     function_param_type_exp =
@@ -1624,8 +1624,8 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
         enter_function_args_type, args_data,
         {builder.getInt32(0), builder.getInt32(first_arg_index)});
 
-    auto real_pt_regs_ptr =
-        builder.CreateLoad(pt_regs_type->getPointerTo(), real_pt_regs_ptr_ref);
+    auto real_pt_regs_ptr = builder.CreateLoad(
+        llvmTypeForMemoryPointer(*module), real_pt_regs_ptr_ref);
 
     real_enter_function_args_type = pt_regs_type;
 
@@ -1973,8 +1973,8 @@ SuccessOrStringError FunctionTracer::createExitFunction(
           builder.CreateGEP(exit_function_args_type, exit_function_args,
                             {builder.getInt32(0), builder.getInt32(5)});
 
-      function_exit_code_value =
-          builder.CreateLoad(builder.getInt32Ty(), function_exit_code);
+      function_exit_code_value = builder.CreateLoad(
+          exit_function_args_type->getElementType(5), function_exit_code);
 
     } else {
       auto function_exit_code_value_exp =
@@ -1985,15 +1985,16 @@ SuccessOrStringError FunctionTracer::createExitFunction(
       }
 
       auto function_exit_code_index = function_exit_code_value_exp.takeValue();
-      function_exit_code_value =
-          builder.CreateLoad(builder.getInt32Ty(), function_exit_code_index);
+      function_exit_code_value = builder.CreateLoad(
+          llvmTypeForMemoryPointer(module), function_exit_code_index);
     }
 
     builder.CreateStore(function_exit_code_value, event_header_exit_code);
 
     // If we are required to also re-capture the exit code with the special
     // EXIT_CODE parameter, then copy this value inside the EventData struct.
-    // The capture logic will take from here and do the rest of the work for us.
+    // The capture logic will take from here and do the rest of the work for
+    // us.
     auto exit_code_it = std::find_if(
         param_list_index.begin(), param_list_index.end(),
 
@@ -2603,7 +2604,7 @@ SuccessOrStringError FunctionTracer::captureString(
     const std::string &parameter_name, llvm::Value *probe_error_flag) {
 
   auto string_address =
-      builder.CreateLoad(builder.getInt8PtrTy(), event_data_field);
+      builder.CreateLoad(builder.getInt64Ty(), event_data_field);
 
   // Skip the read if the pointer is set to nullptr
   auto current_bb = builder.GetInsertBlock();
@@ -2681,7 +2682,7 @@ SuccessOrStringError FunctionTracer::captureBuffer(
     llvm::Value *buffer_size) {
 
   auto buffer_address =
-      builder.CreateLoad(builder.getInt8PtrTy(), event_data_field);
+      builder.CreateLoad(builder.getInt64Ty(), event_data_field);
 
   // Skip the read if the pointer is set to nullptr
   auto current_bb = builder.GetInsertBlock();
@@ -2794,7 +2795,7 @@ SuccessOrStringError FunctionTracer::captureArgv(
 
   // Skip the read if the pointer is set to nullptr
   auto argv_address =
-      builder.CreateLoad(builder.getInt8PtrTy(), event_data_field);
+      builder.CreateLoad(builder.getInt64Ty(), event_data_field);
 
   auto current_bb = builder.GetInsertBlock();
   auto &context = current_bb->getContext();
@@ -2897,7 +2898,7 @@ SuccessOrStringError FunctionTracer::captureArgv(
 
     // If this is the null pointer, skip to the end
     auto pointer_buffer_entry =
-        builder.CreateLoad(builder.getInt8PtrTy(), pointer_buffer_entry_ptr);
+        builder.CreateLoad(builder.getInt64Ty(), pointer_buffer_entry_ptr);
 
     auto capture_string_bb =
         llvm::BasicBlock::Create(context, "capture_" + label, current_function);
@@ -2926,8 +2927,8 @@ SuccessOrStringError FunctionTracer::captureArgv(
   builder.CreateBr(end_argv_capture_bb);
   builder.SetInsertPoint(end_argv_capture_bb);
 
-  // Replace the argv address in the event data structure with the tagged index
-  // for the pointer buffer
+  // Replace the argv address in the event data structure with the tagged
+  // index for the pointer buffer
   auto tagged_pointer_buffer_index = tagBufferStorageIndex(
       bpf_syscall_interface, builder, buffer_storage_index);
 
