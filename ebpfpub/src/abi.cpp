@@ -137,7 +137,7 @@ getPtRegsParameterFromName(llvm::Module &module, llvm::IRBuilder<> &builder,
   auto pt_regs2_type = getTypeByName(module, "pt_regs");
 
   auto value =
-      builder.CreateGEP(pt_regs2_type->getPointerTo(), pt_regs,
+      builder.CreateGEP(pt_regs2_type, pt_regs,
                         {builder.getInt32(0), builder.getInt32(field_index)});
 
   if (type != nullptr && pt_regs2_type != type) {
