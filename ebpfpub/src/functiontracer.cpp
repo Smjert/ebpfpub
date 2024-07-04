@@ -1032,11 +1032,13 @@ SuccessOrStringError FunctionTracer::createEnterFunctionArgumentType(
         break;
       }
 
-      case Parameter::Type::IntegerPtr:
+      case Parameter::Type::IntegerPtr: {
+        field_type = llvmTypeForMemoryPointer(module)->getPointerTo();
+      }
       case Parameter::Type::Buffer:
       case Parameter::Type::String:
       case Parameter::Type::Argv:
-        field_type = llvmTypeForMemoryPointer(module)->getPointerTo();
+        field_type = llvm::Type::getInt8PtrTy(context);
         break;
       }
 
