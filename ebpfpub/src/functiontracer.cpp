@@ -1588,7 +1588,7 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
     return pt_regs_type_exp.error();
   }
 
-  auto* pt_regs_type = pt_regs_type_exp.takeValue();
+  auto *pt_regs_type = pt_regs_type_exp.takeValue();
 
   // Get the event data from the event object
   auto event_data = builder.CreateGEP(
@@ -1693,7 +1693,7 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
                           {builder.getInt32(0), builder.getInt32(args_index)});
 
     auto args_field_value =
-        builder.CreateLoad(builder.getInt32Ty(), args_field);
+        builder.CreateLoad(builder.getInt64Ty(), args_field);
 
     // Store the value
     if (param_index_entry.destination_index_in_opt.has_value()) {
