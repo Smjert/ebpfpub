@@ -1584,14 +1584,6 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
                                " is not defined");
   }
 
-  auto pt_regs_type_exp = ebpf::getPtRegsStructure(*module, "pt_regs");
-
-  if (!pt_regs_type_exp.succeeded()) {
-    return pt_regs_type_exp.error();
-  }
-
-  auto *pt_regs_type = pt_regs_type_exp.takeValue();
-
   // Get the event data from the event object
   auto event_data = builder.CreateGEP(
       event_type, event_object, {builder.getInt32(0), builder.getInt32(1)});
@@ -1601,6 +1593,15 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
 
   llvm::Value *args_data = current_function->arg_begin();
 
+  auto *enter_function_args_type =
+      getTypeByName(*module, kEnterFunctionParameterTypeName);
+  if (enter_function_args_type == nullptr) {
+    return StringError::create("The type " + kEnterFunctionParameterTypeName +
+                               " is not defined");
+  }
+
+  auto *real_enter_function_args_type = enter_function_args_type;
+
   if (enter_event.isSyscallKprobe() && enter_event.usesKprobeIndirectPtRegs()) {
     // The real pt_regs is pointed to by the first argument
     auto first_arg_index_exp = translateParameterNumberToPtregsIndex(0);
@@ -1608,8 +1609,13 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
       return first_arg_index_exp.error();
     }
 
-    auto *enter_function_args_type =
-        getTypeByName(*module, kEnterFunctionParameterTypeName);
+    auto pt_regs_type_exp = ebpf::getPtRegsStructure(*module, "pt_regs");
+
+    if (!pt_regs_type_exp.succeeded()) {
+      return pt_regs_type_exp.error();
+    }
+
+    auto *pt_regs_type = pt_regs_type_exp.takeValue();
 
     auto first_arg_index =
         static_cast<std::uint32_t>(first_arg_index_exp.takeValue());
@@ -1620,6 +1626,8 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
 
     auto real_pt_regs_ptr =
         builder.CreateLoad(pt_regs_type->getPointerTo(), real_pt_regs_ptr_ref);
+
+    real_enter_function_args_type = pt_regs_type;
 
     // Get the space we have allocated for the new ptr_regs
     auto new_pt_regs_exp = getStackAllocation(allocation_list, "pt_regs");
@@ -1691,7 +1699,7 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
     }
 
     auto args_field =
-        builder.CreateGEP(pt_regs_type, args_data,
+        builder.CreateGEP(real_enter_function_args_type, args_data,
                           {builder.getInt32(0), builder.getInt32(args_index)});
 
     auto args_field_value =
