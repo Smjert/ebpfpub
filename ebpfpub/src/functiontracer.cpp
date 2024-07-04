@@ -1036,7 +1036,7 @@ SuccessOrStringError FunctionTracer::createEnterFunctionArgumentType(
       case Parameter::Type::Buffer:
       case Parameter::Type::String:
       case Parameter::Type::Argv:
-        field_type = llvmTypeForMemoryPointer(module);
+        field_type = llvmTypeForMemoryPointer(module)->getPointerTo();
         break;
       }
 
