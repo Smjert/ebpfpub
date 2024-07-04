@@ -1582,10 +1582,13 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
                                " is not defined");
   }
 
-  auto *pt_regs_type = getTypeByName(*module, "pt_regs");
-  if (pt_regs_type == nullptr) {
-    return StringError::create("The type pt_regs is not defined");
+  auto pt_regs_type_exp = ebpf::getPtRegsStructure(*module, "pt_regs");
+
+  if (!pt_regs_type_exp.succeeded()) {
+    return pt_regs_type_exp.error();
   }
+
+  auto* pt_regs_type = pt_regs_type_exp.takeValue();
 
   // Get the event data from the event object
   auto event_data = builder.CreateGEP(

@@ -11,6 +11,7 @@
 #include <unordered_map>
 
 #include "llvm_compat.h"
+#include <tob/ebpf/llvm_utils.h>
 
 namespace tob::ebpfpub {
 namespace {
@@ -134,13 +135,19 @@ getPtRegsParameterFromName(llvm::Module &module, llvm::IRBuilder<> &builder,
 
   auto field_index = parameter_it->second;
 
-  auto pt_regs2_type = getTypeByName(module, "pt_regs");
+  auto pt_regs_type_exp = ebpf::getPtRegsStructure(module, "pt_regs");
+
+  if (!pt_regs_type_exp.succeeded()) {
+    return pt_regs_type_exp.error();
+  }
+
+  auto *pt_regs_type = pt_regs_type_exp.takeValue();
 
   auto value =
-      builder.CreateGEP(pt_regs2_type, pt_regs,
+      builder.CreateGEP(pt_regs_type, pt_regs,
                         {builder.getInt32(0), builder.getInt32(field_index)});
 
-  if (type != nullptr && pt_regs2_type != type) {
+  if (type != nullptr && pt_regs_type != type) {
     value = builder.CreateCast(llvm::Instruction::BitCast, value, type);
   }
 
