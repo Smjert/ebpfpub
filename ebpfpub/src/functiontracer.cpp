@@ -1702,8 +1702,8 @@ SuccessOrStringError FunctionTracer::generateEnterEventData(
         builder.CreateGEP(real_enter_function_args_type, args_data,
                           {builder.getInt32(0), builder.getInt32(args_index)});
 
-    auto args_field_value =
-        builder.CreateLoad(builder.getInt64Ty(), args_field);
+    auto args_field_value = builder.CreateLoad(
+        real_enter_function_args_type->getElementType(args_index), args_field);
 
     // Store the value
     if (param_index_entry.destination_index_in_opt.has_value()) {
