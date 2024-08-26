@@ -257,8 +257,8 @@ FunctionTracer::FunctionTracer(
       error_message += ": " + error_buffer;
     }
 
-    output_stream.flush();
-    error_message += "\nFull Module:\n" + output_stream.str();
+    // output_stream.flush();
+    // error_message += "\nFull Module:\n" + output_stream.str();
 
     throw StringError::create(error_message);
   }
@@ -1487,6 +1487,7 @@ SuccessOrStringError FunctionTracer::generateEventHeader(
 
   builder.CreateStore(builder.getInt64(0U), event_header_field);
 
+  // TODO: Test this with a docker container
   // Capture the cgroup name
   if (llvm_bridge != nullptr) {
     auto parent_cgroup_name =
@@ -1555,6 +1556,7 @@ SuccessOrStringError FunctionTracer::generateEventHeader(
     bpf_syscall_interface.probeRead(temp_storage, builder.getInt64(8U),
                                     cgroup_name_ptr.opaque_pointer);
 
+    // TODO: Test this with a docker container
     bpf_syscall_interface.probeReadStr(
         current_cgroup_name, kCgroupNameSliceSize,
         builder.CreateLoad(builder.getInt8Ty()->getPointerTo(), temp_storage));

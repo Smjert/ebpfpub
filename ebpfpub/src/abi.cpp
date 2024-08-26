@@ -119,14 +119,6 @@ getPtRegsParameterFromName(llvm::Module &module, llvm::IRBuilder<> &builder,
                            llvm::Value *pt_regs, const std::string &name,
                            llvm::Type *type) {
 
-  std::vector<llvm::Type *> pt_regs_elements;
-  for (auto i = 0; i < kParameterNameToPtRegsIndex64.size(); ++i) {
-    pt_regs_elements.push_back(builder.getInt32Ty());
-  }
-
-  // auto pt_regs_type = llvm::StructType::create(builder.getContext(),
-  // pt_regs_elements, "pt_regs");
-
   auto parameter_it = kParameterNameToPtRegsIndex64.find(name);
   if (parameter_it == kParameterNameToPtRegsIndex64.end()) {
     return StringError::create(
